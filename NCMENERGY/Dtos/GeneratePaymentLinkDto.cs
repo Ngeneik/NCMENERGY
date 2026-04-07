@@ -1,0 +1,22 @@
+﻿namespace NCMENERGY.Dtos
+{
+    public class GeneratePaymentLinkDto
+    {
+        public string? FirstName { get; set; }
+        public string? LastName { get; set; }
+        public string? Email { get; set; }
+        public string? PhoneNumber { get; set; }
+        public string? Address { get; set; }
+        public string? City { get; set; }
+        public string? State { get; set; }
+
+        public List<OrderSummary>? OrderSummary { get; set; }
+    }
+
+
+    public class OrderSummary
+    {
+        public Guid ProductId { get; set; }
+        public int Quantity { get; set; }
+    }
+}
