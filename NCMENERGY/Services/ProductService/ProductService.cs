@@ -25,7 +25,6 @@ namespace NCMENERGY.Services.ProductService
         {
             string? thumbNailUrl = null;
 
-            // 1. Upload thumbnail if provided
             if (request.ThumbNail != null)
             {
                 var thumbResponse = await _fileUploadService.UploadFile(new FileUploadDto
@@ -33,36 +32,40 @@ namespace NCMENERGY.Services.ProductService
                     Files = new List<IFormFile> { request.ThumbNail }
                 });
 
-                if (thumbResponse.Success && thumbResponse.Data is List<string> thumbUrls && thumbUrls.Any())
+                if (thumbResponse.Success &&
+                    thumbResponse.Data is List<string> thumbUrls &&
+                    thumbUrls.Any())
                 {
                     thumbNailUrl = thumbUrls.First();
                 }
             }
 
-            // 2. Calculate SlashedPrice and Yousave
+            var percentOff = GetDiscount();
+            var stock = GetStock();
+            var rating = GetRating();
+
             decimal slashedPrice = request.Price;
             decimal youSave = 0;
 
-            if (request.PercentOff.HasValue && request.PercentOff.Value > 0)
+            if (percentOff > 0)
             {
-                slashedPrice = request.Price + (request.Price * request.PercentOff.Value / 100);
+                slashedPrice = request.Price + (request.Price * percentOff / 100);
                 youSave = slashedPrice - request.Price;
             }
 
-            // 3. Create product
             var product = new Product
             {
                 Category = request.Category,
                 BrandName = request.BrandName,
                 ProductName = request.ProductName,
-                ReviewPoint = request.ReviewPoint,
-                ReviewCount = request.ReviewCount,
+                ReviewPoint = rating,
+                ReviewCount = Random.Shared.Next(10, 500),
                 Price = request.Price,
                 SlashedPrice = slashedPrice,
-                PercentOff = request.PercentOff,
-                Stock = request.Stock,
+                PercentOff = percentOff,
+                Stock = stock,
                 Yousave = youSave,
-                InStock = request.InStock,
+                InStock = stock > 0,
                 Warranty = request.Warranty,
                 Description = request.Description,
                 InstallationNote = request.InstallationNote,
@@ -75,7 +78,6 @@ namespace NCMENERGY.Services.ProductService
             _context.Products.Add(product);
             await _context.SaveChangesAsync();
 
-            // 4. Upload other images
             if (request.Images != null && request.Images.Any())
             {
                 var uploadResponse = await _fileUploadService.UploadFile(new FileUploadDto
@@ -96,7 +98,6 @@ namespace NCMENERGY.Services.ProductService
                 }
             }
 
-            // 5. Save specifications (UPDATED)
             if (request.Specifications != null && request.Specifications.Any())
             {
                 foreach (var specJson in request.Specifications)
@@ -109,13 +110,12 @@ namespace NCMENERGY.Services.ProductService
                         ProductId = product.Id
                     };
 
-                    var productSpec = new ProductSpec
+                    spec.ProductSpecs.Add(new ProductSpec
                     {
                         Metrics = specDto.metrics,
                         Value = specDto.value
-                    };
+                    });
 
-                    spec.ProductSpecs.Add(productSpec);
                     _context.Specifications.Add(spec);
                 }
             }
@@ -212,26 +212,21 @@ namespace NCMENERGY.Services.ProductService
                 };
             }
 
-            // 1. Calculate SlashedPrice and Yousave
+            // Recalculate using existing discount percentage
             decimal slashedPrice = request.Price;
             decimal youSave = 0;
 
-            if (request.PercentOff.HasValue && request.PercentOff.Value > 0)
+            if (product.PercentOff.HasValue && product.PercentOff.Value > 0)
             {
-                slashedPrice = request.Price + (request.Price * request.PercentOff.Value / 100);
+                slashedPrice = request.Price + (request.Price * product.PercentOff.Value / 100);
                 youSave = slashedPrice - request.Price;
             }
 
-            // 2. Update product fields
             product.Category = request.Category;
             product.BrandName = request.BrandName;
             product.ProductName = request.ProductName;
-            product.ReviewPoint = request.ReviewPoint;
-            product.ReviewCount = request.ReviewCount;
             product.Price = request.Price;
             product.SlashedPrice = slashedPrice;
-            product.PercentOff = request.PercentOff;
-            product.Stock = request.Stock;
             product.Yousave = youSave;
             product.InStock = request.InStock;
             product.Warranty = request.Warranty;
@@ -240,13 +235,13 @@ namespace NCMENERGY.Services.ProductService
             product.Related = request.Related;
             product.ModifiedAt = DateTime.UtcNow;
 
-            // 3. Update thumbnail if provided
             if (request.ThumbNail != null)
             {
                 if (!string.IsNullOrEmpty(product.ThumbNail))
                 {
                     var fileName = Path.GetFileName(product.ThumbNail);
                     var filePath = Path.Combine(_env.WebRootPath, "uploads", fileName);
+
                     if (System.IO.File.Exists(filePath))
                         System.IO.File.Delete(filePath);
                 }
@@ -256,13 +251,14 @@ namespace NCMENERGY.Services.ProductService
                     Files = new List<IFormFile> { request.ThumbNail }
                 });
 
-                if (thumbResponse.Success && thumbResponse.Data is List<string> thumbUrls && thumbUrls.Any())
+                if (thumbResponse.Success &&
+                    thumbResponse.Data is List<string> thumbUrls &&
+                    thumbUrls.Any())
                 {
                     product.ThumbNail = thumbUrls.First();
                 }
             }
 
-            // 4. Replace images if new ones are provided
             if (request.Images != null && request.Images.Any())
             {
                 foreach (var image in product.Images)
@@ -271,6 +267,7 @@ namespace NCMENERGY.Services.ProductService
                     {
                         var fileName = Path.GetFileName(image.ImageUrl);
                         var filePath = Path.Combine(_env.WebRootPath, "uploads", fileName);
+
                         if (System.IO.File.Exists(filePath))
                             System.IO.File.Delete(filePath);
                     }
@@ -296,7 +293,6 @@ namespace NCMENERGY.Services.ProductService
                 }
             }
 
-            // 5. Replace specifications if new ones are provided
             if (request.Specifications != null && request.Specifications.Any())
             {
                 foreach (var spec in product.Specifications)
@@ -319,13 +315,12 @@ namespace NCMENERGY.Services.ProductService
                         ProductId = product.Id
                     };
 
-                    var productSpec = new ProductSpec
+                    spec.ProductSpecs.Add(new ProductSpec
                     {
                         Metrics = specDto.metrics,
                         Value = specDto.value
-                    };
+                    });
 
-                    spec.ProductSpecs.Add(productSpec);
                     _context.Specifications.Add(spec);
                 }
             }
@@ -414,6 +409,21 @@ namespace NCMENERGY.Services.ProductService
                 Success = true,
                 Data = data
             };
+        }
+
+        private int GetDiscount()
+        {
+            return Random.Shared.Next(11, 35);
+        }
+
+        private int GetStock()
+        {
+            return Random.Shared.Next(40, 91);
+        }
+
+        private decimal GetRating()
+        {
+            return Math.Round((decimal)(Random.Shared.NextDouble() * 1.5 + 3.5), 1);
         }
     }
 }

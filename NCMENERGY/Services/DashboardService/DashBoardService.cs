@@ -15,8 +15,12 @@ namespace NCMENERGY.Services.DashboardService
         }
         public async Task<GenericResponse> GetCards()
         {
-            var totalOrders = _context.Orders.Count();
-            var totalRevenue = _context.Orders.Sum(o => o.TotalAmount);
+            var totalOrders = _context.Orders.Count(o => o.Status == "Paid");
+
+            var totalRevenue = _context.Orders
+                .Where(o => o.Status == "Paid")
+                .Sum(o => o.TotalAmount);
+
             var totalProducts = _context.Products.Count();
             var data = new
             {
