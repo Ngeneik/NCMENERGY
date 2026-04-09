@@ -153,7 +153,6 @@ namespace NCMENERGY.Services.Payment
 
         public async Task<GenericResponse> VerifyPayment(string transactionRef)
         {
-            // Find the payment in the database
             var payment = await _context.Payments
                 .Include(p => p.Order)
                 .FirstOrDefaultAsync(p => p.TransactionRef.ToString() == transactionRef);
@@ -161,19 +160,36 @@ namespace NCMENERGY.Services.Payment
             if (payment == null)
                 return new GenericResponse { Success = false, Message = "Payment not found" };
 
-            // Call Paystack to verify transaction
-            using var client = new HttpClient();
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _settings.Key);
+            // Prevent duplicate processing
+            if (payment.Status == "Paid")
+            {
+                return new GenericResponse
+                {
+                    Success = true,
+                    Message = "Payment already verified",
+                    Data = new { PaymentId = payment.Id, OrderId = payment.Order?.OrderTag }
+                };
+            }
 
-            var response = await client.GetAsync($"https://api.paystack.co/transaction/verify/{transactionRef}");
-            var paystackResponse = await response.Content.ReadFromJsonAsync<PaystackVerifyResponse>();
+            using var client = new HttpClient();
+            client.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", _settings.Key);
+
+            var response = await client.GetAsync(
+                $"https://api.paystack.co/transaction/verify/{transactionRef}");
+
+            var paystackResponse =
+                await response.Content.ReadFromJsonAsync<PaystackVerifyResponse>();
 
             if (paystackResponse == null || !paystackResponse.Status)
-                return new GenericResponse { Success = false, Message = "Failed to verify payment" };
+                return new GenericResponse
+                {
+                    Success = false,
+                    Message = "Failed to verify payment"
+                };
 
             if (paystackResponse.Data.Status == "success")
             {
-                // Update payment and order statuses
                 payment.Status = "Paid";
                 payment.PaidAt = DateTime.UtcNow;
 
@@ -182,7 +198,6 @@ namespace NCMENERGY.Services.Payment
 
                 await _context.SaveChangesAsync();
 
-                // Send email notification for new order
                 if (payment.Order != null)
                     await SendOrderPlacedEmail(payment.Order);
 
@@ -194,9 +209,12 @@ namespace NCMENERGY.Services.Payment
                 };
             }
 
-            return new GenericResponse { Success = false, Message = "Payment not completed" };
+            return new GenericResponse
+            {
+                Success = false,
+                Message = "Payment not completed"
+            };
         }
-
         private async Task SendOrderPlacedEmail(Order order)
         {
             if (order == null) return;
